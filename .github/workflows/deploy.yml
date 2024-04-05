@@ -17,7 +17,7 @@ jobs:
             - args: [--global, gulp, prettier, typescript]
 
       - name: Build Slides
-        run: pnpm build -- --base /presentation-libgit2-nodegit-native-git-oh-my/
+        run: pnpm build -- --base /presentation-otel-show-and-tell/
         working-directory: ./apps/slides
 
       - uses: actions/configure-pages@v4
