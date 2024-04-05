@@ -1,0 +1,8 @@
+img {
+  max-width: 60vw;
+  height: auto;
+}
+
+.slidev-layout h1 + p {
+  opacity: 1.0;
+}

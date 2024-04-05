@@ -1,0 +1,78 @@
+# extensions:
+#   zpages:
+#     endpoint: localhost:55679
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: localhost:4317
+      http:
+        endpoint: localhost:4318
+
+processors:
+  batch:
+  memory_limiter:
+    # 75% of maximum memory up to 2G
+    limit_mib: 1536
+    # 25% of limit up to 2G
+    spike_limit_mib: 512
+    check_interval: 5s
+
+extensions:
+  basicauth/prometheus:
+    client_auth:
+      username: ${env:PROMETHEUS_USER}
+      password: ${env:PROMETHEUS_PASS}
+    # htpasswd:
+    #   inline: |
+    #     ${env:PROMETHEUS_USER}:${env:PROMETHEUS_PASS}
+
+exporters:
+  debug:
+    verbosity: detailed
+
+  otlp:
+    endpoint: tempo-prod-04-prod-us-east-0.grafana.net:443
+    headers:
+      authorization: Basic ${env:TEMPO_AUTH}
+
+  loki:
+    endpoint: https://logs-prod-006.grafana.net/loki/api/v1/push
+    headers:
+      authorization: Basic ${env:LOKI_AUTH}
+    # default_labels_enabled:
+    #   exporter: false
+    #   job: true
+
+  prometheusremotewrite:
+    endpoint: "https://prometheus-prod-13-prod-us-east-0.grafana.net/api/prom/push"
+    headers:
+      authorization: Basic ${env:PROMETHEUS_AUTH}
+  # File is a bad idea since we need a middleman db to be pulled from anyway
+  # file:
+  #   path: ./otel-data.txt
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [
+          memory_limiter,
+          # batch
+        ]
+      exporters: [debug, otlp]
+    metrics:
+      receivers: [otlp]
+      processors: [
+          memory_limiter,
+          # batch
+        ]
+      exporters: [debug, prometheusremotewrite]
+    logs:
+      receivers: [otlp]
+      processors: [
+          memory_limiter,
+          # batch
+        ]
+      exporters: [debug, loki]
