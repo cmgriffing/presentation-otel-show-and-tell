@@ -16,7 +16,7 @@ jobs:
               args: [--frozen-lockfile, --strict-peer-dependencies]
             - args: [--global, gulp, prettier, typescript]
 
-      - name: Build
+      - name: Build Slides
         run: pnpm build -- --base /presentation-libgit2-nodegit-native-git-oh-my/
         working-directory: ./apps/slides
 
