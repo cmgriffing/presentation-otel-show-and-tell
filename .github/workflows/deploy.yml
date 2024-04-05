@@ -22,7 +22,7 @@ jobs:
             - args: [--global, gulp, prettier, typescript]
 
       - name: Build Slides
-        run: pnpm build -- --base /presentation-otel-show-and-tell/
+        run: pnpm build --base /presentation-otel-show-and-tell/
         working-directory: ./apps/slides
 
       - uses: actions/configure-pages@v4
