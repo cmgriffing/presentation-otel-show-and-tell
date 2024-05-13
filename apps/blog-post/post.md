@@ -241,6 +241,156 @@ export async function fetchGithubStars() {
 }
 ```
 
+### Option A: Wiring Up @vercel/otel
+
+The `@vercel/otel` package is very easy to get started with. It works everywhere that Next.js works. So, it will run in in Vercel's Node.js environment, it will run at the edge, and it will run in your own self-hosted environments too.
+
+After installation, there is really just one major thing you need to do. YOu will import the package and run the `registerOTel` function with a string for your service name.
+
+```js
+import { registerOTel } from "@vercel/otel";
+
+export function register() {
+  registerOTel("next-app");
+}
+```
+
+You can also pass a config object that allows you to customize things a bit more. The configuration interface currently looks like this:
+
+```ts
+interface Configuration {
+  attributes?: Attributes;
+  attributesFromHeaders?: AttributesFromHeaders;
+  autoDetectResources?: boolean;
+  contextManager?: ContextManager;
+  idGenerator?: IdGenerator;
+  instrumentationConfig?: InstrumentationConfiguration;
+  instrumentations?: InstrumentationOptionOrName[];
+  logRecordProcessor?: LogRecordProcessor;
+  metricReader?: MetricReader;
+  propagators?: PropagatorOrName[];
+  resourceDetectors?: DetectorSync[];
+  serviceName?: string;
+  spanLimits?: SpanLimits;
+  spanProcessors?: SpanProcessorOrName[];
+  traceExporter?: SpanExporterOrName;
+  traceSampler?: SampleOrName;
+  views?: View[];
+}
+```
+
+We won't dig too deeply into customizing that config here, but there is a lot of power in there.
+
+### Option B: Manual Integration
+
+Instead of using the `@vercel/otel` package, you can do a manual integration. One important note is that the manual integration is NOT compatible with the Edge runtime.
+
+Because of that we need to make sure we only register our instrumentation function in a Node.js based environment:
+
+```js
+export async function register() {
+  if (process.env.NEXT_RUNTIME === "nodejs") {
+    await import("./instrumentation.node.ts");
+  }
+}
+```
+
+In the `instrumentation.node.ts` file we can then import the OpenTelemetry Node SDK along with some other classes and start the SDK:
+
+```js
+import { NodeSDK } from "@opentelemetry/sdk-node";
+import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
+import { Resource } from "@opentelemetry/resources";
+import { SEMRESATTRS_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
+import { SimpleSpanProcessor } from "@opentelemetry/sdk-trace-node";
+
+const sdk = new NodeSDK({
+  resource: new Resource({
+    [SEMRESATTRS_SERVICE_NAME]: "next-app",
+  }),
+  spanProcessor: new SimpleSpanProcessor(new OTLPTraceExporter()),
+});
+sdk.start();
+```
+
+That's it. Pretty straightforward. There is a lot more you can do with it, though, such as instrumenting other parts of your node application:
+
+```js
+const instrumentations = getNodeAutoInstrumentations({
+  "@opentelemetry/instrumentation-pino": {
+    logHook: (span, record, level) => {
+      record["resource.service.name"] = "next-app";
+      span.setAttribute("NEXT_LOG_KEY", "NEXT_LOG_VALUE");
+
+      const attrs = span.attributes;
+      for (const [key, value] of Object.entries(attrs)) {
+        record[key] = value;
+      }
+    },
+    // Log span context under custom keys
+    // This is optional, and will default to "trace_id", "span_id" and "trace_flags" as the keys
+    logKeys: {
+      traceId: "traceId",
+      spanId: "spanId",
+      traceFlags: "traceFlags",
+    },
+  },
+  // load custom configuration for http instrumentation
+  "@opentelemetry/instrumentation-http": {
+    applyCustomAttributesOnSpan: (span) => {
+      span.setAttribute("foo2", "bar2");
+    },
+  },
+  "@opentelemetry/instrumentation-fs": { enabled: false },
+});
+
+registerInstrumentations({
+  instrumentations,
+});
+
+const sdk = new NodeSDK({
+  resource: new Resource({
+    [SEMRESATTRS_SERVICE_NAME]: "next-app",
+  }),
+  instrumentations,
+});
+
+sdk.start();
+```
+
+### Manual Configuration: Edge Support
+
+While this is not official, it does seem like there is a way to get a manual configuration to play nicely with the Edge runtime. Since Vercel is using CloudFlare workers, according to [this HackerNews comment by Lee Robinson](https://news.ycombinator.com/item?id=29003514), we can use their `waitUntil` API.
+
+At Highlight, the waitUntil API is polyfilled to support the edge runtime, so you don't have to do anything extra.
+
+\[IMAGE GOES HERE\]
+
+## How Does Highlight Help?
+
+At this point, if you have a collector set up and your Next.js instrumentation hook set up you are pretty much good to go. So, you might be wondering what Highlight can do for you.
+
+Well, for one, Highlight has their own collector that you will connect to. That takes away the ehadache of making sure it can scale. Having someone on your team deal with and worry about that means that time could be better spent building your application and shipping features to delight your users.
+
+### More Than Just the OpenTelemetry Node.js SDK
+
+Beyond handling that scalability for you, Highlight also helps you do things that the official OpenTelemetry Node.js just doesn't support, yet.
+
+As mentioned earlier, the official Node.js SDK's support for logging is under development. Highlight fills that gap so that you can get Logging and Error Tracing like you would expect from any other major provider.
+
+The big thing that sets Highlight apart is top notch Session Replay. Highlight puts in a lot of effort to tie client-side events and spans to your server-side traces. This gives you the ability to see the path your users are taking through your application. Don't worry every effort is made to scrub any personal data from the replay, which is another thing Highlight's Collector adds for you without any extra effort on your part.
+
+\[IMAGE OR GIF OF SESSION REPLAY\]
+
+## Wrapping Up
+
+I hope you enjoyed reading this and I hope there was something fun to learn. At the end of the day:
+
+- whether you use Vercel or self-host...
+- whether you use Highlight or your own collector and providers or maybe even another OpenTelemetry compliant vendor...
+
+OTEL is an incredibly important project that can help you maintain a vendor-agnostic telemetry integration. You can reduce the amount of rewriting and churn when you decide to change providers. Thanks for reading.
+
   <!-- NOTES for webinar
 
   - drop some of the history
